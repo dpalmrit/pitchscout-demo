@@ -462,20 +462,7 @@
           </article>
         </section>
 
-        <figure class="code-snippet" aria-label="Lambda handler code example">
-          <figcaption class="sr-only">Python Lambda handler — jersey-aware prompt, UUID-only storage</figcaption>
-          <pre><code><span class="cm"># Lambda: AI Analysis Handler — jersey-aware prompt</span>
-<span class="kw">def</span> <span class="fn">handler</span>(event, context):
-    session_uuid = event[<span class="str">'session_uuid'</span>]
-    player_uuid  = event[<span class="str">'player_uuid'</span>]
-    jersey       = event[<span class="str">'jersey_number'</span>]   <span class="cm"># e.g. "7"</span>
-    position     = event[<span class="str">'position'</span>]        <span class="cm"># e.g. "CM"</span>
-
-    prompt = SCOUT_PROMPT.<span class="fn">format</span>(
-        jersey=jersey, position=position
-    )
-    <span class="cm"># e.g. "Analyse player #7 (CM) in this footage…"</span>
-
+        <
     presigned = s3.<span class="fn">generate_presigned_url</span>(
         <span class="str">'get_object'</span>,
         Params={<span class="str">'Bucket'</span>: BUCKET, <span class="str">'Key'</span>: event[<span class="str">'s3_key'</span>]},

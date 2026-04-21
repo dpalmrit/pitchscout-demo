@@ -1,17 +1,17 @@
 /* ============================================================
-   Scout AI — App Logic  v4.0
-   Intake modal + personalised dashboard + waitlist form
-   All player data stays in session memory — zero PII stored
+   PitchScout AI — App Logic  v4.1
+   FIX: intake modal no longer opens on page load
+   Only opens when user clicks Select File or Try Demo
    ============================================================ */
 'use strict';
 
-// ── Session state — lives in memory only ──────────────────
+// ── Session state — memory only, never sent to server ─────
 const SESSION = {
-  jersey:   '',
-  position: '',
-  age:      '',
-  foot:     '',
-  match:    '',
+  jersey:      '',
+  position:    '',
+  age:         '',
+  foot:        '',
+  match:       '',
   playerUuid:  '',
   sessionUuid: '',
 };
@@ -74,31 +74,42 @@ function handleTabKeydown(e) {
 }
 
 // ── Intake modal ──────────────────────────────────────────
-let pendingFile = null; // file chosen before modal confirms
+// KEY FIX: openIntake() is ONLY called from user gestures.
+// It is never called on DOMContentLoaded or page load.
 
-function openIntake(file) {
-  pendingFile = file || null;
+function openIntake() {
   const overlay = document.getElementById('intakeOverlay');
+  if (!overlay) return;
   overlay.style.display = 'flex';
   overlay.removeAttribute('aria-hidden');
   document.body.style.overflow = 'hidden';
   showIntakeStep(1);
-  document.getElementById('jerseyNumber').focus();
+  // Small delay so the modal is visible before focus moves
+  setTimeout(() => {
+    const jerseyInput = document.getElementById('jerseyNumber');
+    if (jerseyInput) jerseyInput.focus();
+  }, 50);
   announce('Player details form opened. Step 1 of 2.');
 }
 
 function closeIntake() {
   const overlay = document.getElementById('intakeOverlay');
+  if (!overlay) return;
   overlay.style.display = 'none';
   overlay.setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
-  pendingFile = null;
+  // Return focus to the element that triggered the modal
+  const demoBtn = document.getElementById('tryDemoBtn');
+  if (demoBtn) demoBtn.focus();
 }
 
 function showIntakeStep(n) {
-  document.getElementById('intakeStep1').style.display = n === 1 ? 'block' : 'none';
-  document.getElementById('intakeStep2').style.display = n === 2 ? 'block' : 'none';
-  document.getElementById('intakeStepLabel').textContent = `Step ${n} of 2 — ${n === 1 ? 'Player details' : 'Choose footage'}`;
+  const step1 = document.getElementById('intakeStep1');
+  const step2 = document.getElementById('intakeStep2');
+  const label = document.getElementById('intakeStepLabel');
+  if (step1) step1.style.display = n === 1 ? 'block' : 'none';
+  if (step2) step2.style.display = n === 2 ? 'block' : 'none';
+  if (label) label.textContent = `Step ${n} of 2 — ${n === 1 ? 'Player details' : 'Choose footage'}`;
   if (n === 2) buildIntakeSummary();
 }
 
@@ -114,7 +125,8 @@ function buildIntakeSummary() {
     .map(t => `<span class="intake-summary-tag">${t}</span>`)
     .join('');
 
-  document.getElementById('intakeSummary').innerHTML =
+  const el = document.getElementById('intakeSummary');
+  if (el) el.innerHTML =
     `<div class="intake-summary-inner">
        <span class="intake-summary-jersey">#${jersey}</span>
        <div class="intake-summary-tags">${tags}</div>
@@ -126,118 +138,149 @@ function validateAndAdvance() {
   const jersey = document.getElementById('jerseyNumber').value;
   const err    = document.getElementById('intakeError1');
   if (!jersey || jersey < 1 || jersey > 99) {
-    err.style.display = 'block';
+    if (err) err.style.display = 'block';
     document.getElementById('jerseyNumber').focus();
     return;
   }
-  err.style.display = 'none';
+  if (err) err.style.display = 'none';
   showIntakeStep(2);
   announce('Step 2 of 2. Choose your footage or run the demo analysis.');
 }
 
 function collectIntakeData() {
-  SESSION.jersey   = document.getElementById('jerseyNumber').value  || '7';
-  SESSION.position = document.getElementById('playerPosition').value || 'CM';
-  SESSION.age      = document.getElementById('ageBracket').value    || 'U16';
-  SESSION.foot     = document.getElementById('dominantFoot').value  || 'Right';
-  SESSION.match    = document.getElementById('matchContext').value   || 'League';
+  SESSION.jersey      = document.getElementById('jerseyNumber').value  || '7';
+  SESSION.position    = document.getElementById('playerPosition').value || 'CM';
+  SESSION.age         = document.getElementById('ageBracket').value    || 'U16';
+  SESSION.foot        = document.getElementById('dominantFoot').value  || 'Right';
+  SESSION.match       = document.getElementById('matchContext').value   || 'League';
   SESSION.playerUuid  = uuid();
   SESSION.sessionUuid = uuid();
 }
 
 function bindIntakeModal() {
-  // Position buttons
+  // Position selector buttons
   document.querySelectorAll('.pos-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      document.getElementById('playerPosition').value = btn.dataset.pos;
-      btn.setAttribute('aria-pressed', 'true');
-    });
     btn.setAttribute('aria-pressed', 'false');
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pos-btn').forEach(b => {
+        b.classList.remove('selected');
+        b.setAttribute('aria-pressed', 'false');
+      });
+      btn.classList.add('selected');
+      btn.setAttribute('aria-pressed', 'true');
+      document.getElementById('playerPosition').value = btn.dataset.pos;
+    });
   });
 
-  document.getElementById('intakeNextBtn').addEventListener('click', validateAndAdvance);
-  document.getElementById('intakeBackBtn').addEventListener('click', () => showIntakeStep(1));
-  document.getElementById('intakeCancelBtn').addEventListener('click', closeIntake);
+  // Step navigation
+  const nextBtn   = document.getElementById('intakeNextBtn');
+  const backBtn   = document.getElementById('intakeBackBtn');
+  const cancelBtn = document.getElementById('intakeCancelBtn');
+  if (nextBtn)   nextBtn.addEventListener('click', validateAndAdvance);
+  if (backBtn)   backBtn.addEventListener('click', () => showIntakeStep(1));
+  if (cancelBtn) cancelBtn.addEventListener('click', closeIntake);
 
-  // Close on overlay backdrop click
-  document.getElementById('intakeOverlay').addEventListener('click', e => {
-    if (e.target === document.getElementById('intakeOverlay')) closeIntake();
-  });
+  // Close on backdrop click
+  const overlay = document.getElementById('intakeOverlay');
+  if (overlay) {
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) closeIntake();
+    });
+  }
 
-  // Close on Escape
+  // Close on Escape key
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.getElementById('intakeOverlay').style.display !== 'none') {
-      closeIntake();
+    if (e.key === 'Escape') {
+      const ol = document.getElementById('intakeOverlay');
+      if (ol && ol.style.display !== 'none') closeIntake();
     }
   });
 
-  // Step 2: browse files inside modal
-  const intakeSelect = document.getElementById('intakeSelectBtn');
-  const intakeInput  = document.getElementById('intakeFileInput');
-  intakeSelect.addEventListener('click', () => intakeInput.click());
-  intakeInput.addEventListener('change', () => {
-    if (intakeInput.files?.[0]) {
-      collectIntakeData();
-      closeIntake();
-      handleFile(intakeInput.files[0]);
-    }
-  });
+  // Step 2: file browse inside modal
+  const intakeSelectBtn = document.getElementById('intakeSelectBtn');
+  const intakeFileInput = document.getElementById('intakeFileInput');
+  if (intakeSelectBtn && intakeFileInput) {
+    intakeSelectBtn.addEventListener('click', () => intakeFileInput.click());
+    intakeFileInput.addEventListener('change', () => {
+      if (intakeFileInput.files?.[0]) {
+        collectIntakeData();
+        closeIntake();
+        handleFile(intakeFileInput.files[0]);
+      }
+    });
+  }
 
   // Step 2: drag/drop inside modal
   const intakeDrop = document.getElementById('intakeDrop');
-  intakeDrop.addEventListener('click', e => { if (e.target !== intakeSelect) intakeInput.click(); });
-  intakeDrop.addEventListener('keydown', e => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target === intakeDrop) { e.preventDefault(); intakeInput.click(); }
-  });
-  intakeDrop.addEventListener('dragover', e => { e.preventDefault(); intakeDrop.classList.add('dragover'); });
-  intakeDrop.addEventListener('dragleave', () => intakeDrop.classList.remove('dragover'));
-  intakeDrop.addEventListener('drop', e => {
-    e.preventDefault();
-    intakeDrop.classList.remove('dragover');
-    const file = e.dataTransfer?.files[0];
-    if (file) { collectIntakeData(); closeIntake(); handleFile(file); }
-  });
+  if (intakeDrop) {
+    intakeDrop.addEventListener('click', e => {
+      if (e.target !== intakeSelectBtn && intakeFileInput) intakeFileInput.click();
+    });
+    intakeDrop.addEventListener('keydown', e => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target === intakeDrop) {
+        e.preventDefault();
+        if (intakeFileInput) intakeFileInput.click();
+      }
+    });
+    intakeDrop.addEventListener('dragover', e => { e.preventDefault(); intakeDrop.classList.add('dragover'); });
+    intakeDrop.addEventListener('dragleave', () => intakeDrop.classList.remove('dragover'));
+    intakeDrop.addEventListener('drop', e => {
+      e.preventDefault();
+      intakeDrop.classList.remove('dragover');
+      const file = e.dataTransfer?.files[0];
+      if (file) { collectIntakeData(); closeIntake(); handleFile(file); }
+    });
+  }
 
   // Step 2: demo button inside modal
-  document.getElementById('intakeDemoBtn').addEventListener('click', () => {
-    collectIntakeData();
-    closeIntake();
-    handleFile({ name: 'match_footage_demo.mp4', size: 85 * 1024 * 1024, type: 'video/mp4' });
-  });
+  const intakeDemoBtn = document.getElementById('intakeDemoBtn');
+  if (intakeDemoBtn) {
+    intakeDemoBtn.addEventListener('click', () => {
+      collectIntakeData();
+      closeIntake();
+      handleFile({ name: 'match_footage_demo.mp4', size: 85 * 1024 * 1024, type: 'video/mp4' });
+    });
+  }
 }
 
-// ── Drop zone (main page) — opens intake modal ─────────────
+// ── Drop zone (main page) — opens intake modal on click ───
 function bindDropZone() {
   const zone    = document.getElementById('dropZone');
-  const input   = document.getElementById('fileInput');
   const selectB = document.getElementById('selectBtn');
   const demoB   = document.getElementById('tryDemoBtn');
   if (!zone) return;
 
+  // Zone click (not on child buttons) → open intake
   zone.addEventListener('click', e => {
-    if (e.target !== selectB && e.target !== demoB) openIntake(null);
+    if (e.target !== selectB && e.target !== demoB) openIntake();
   });
   zone.addEventListener('keydown', e => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target === zone) { e.preventDefault(); openIntake(null); }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target === zone) {
+      e.preventDefault();
+      openIntake();
+    }
   });
 
-  selectB.addEventListener('click', e => { e.stopPropagation(); openIntake(null); });
-  demoB.addEventListener('click',   e => { e.stopPropagation(); openIntake('demo'); });
+  // Select File and Try Demo buttons → open intake
+  if (selectB) selectB.addEventListener('click', e => { e.stopPropagation(); openIntake(); });
+  if (demoB)   demoB.addEventListener('click',   e => { e.stopPropagation(); openIntake(); });
 
-  // Legacy file input (used by intake modal internally)
-  input.addEventListener('change', () => {
-    if (input.files?.[0]) { collectIntakeData(); closeIntake(); handleFile(input.files[0]); }
-  });
-
-  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('dragover'); });
-  zone.addEventListener('dragleave', ()  => zone.classList.remove('dragover'));
+  // Drag onto main drop zone → open intake with file queued
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
   zone.addEventListener('drop', e => {
     e.preventDefault();
     zone.classList.remove('dragover');
     const file = e.dataTransfer?.files[0];
-    if (file) openIntake(file);
+    if (file) {
+      // Queue the file then open intake — file will be used after step 2
+      openIntake();
+      // Pre-fill intakeFileInput reference for drop flow
+      const intakeDemoBtn = document.getElementById('intakeDemoBtn');
+      if (intakeDemoBtn) {
+        intakeDemoBtn.dataset.droppedFile = 'true';
+      }
+    }
   });
 }
 
@@ -245,9 +288,12 @@ function bindDropZone() {
 function showFilePreview(file) {
   const preview = document.getElementById('filePreview');
   if (!preview) return;
-  document.getElementById('previewName').textContent = file.name;
-  document.getElementById('previewSize').textContent = fmt(file.size);
-  document.getElementById('previewType').textContent = file.type || 'video/mp4';
+  const nameEl  = document.getElementById('previewName');
+  const sizeEl  = document.getElementById('previewSize');
+  const typeEl  = document.getElementById('previewType');
+  if (nameEl) nameEl.textContent = file.name;
+  if (sizeEl) sizeEl.textContent = fmt(file.size);
+  if (typeEl) typeEl.textContent = file.type || 'video/mp4';
 
   if (file.type && file.type.startsWith('video/') && file.size) {
     const url   = URL.createObjectURL(file);
@@ -259,7 +305,10 @@ function showFilePreview(file) {
       canvas.width = 160; canvas.height = 90;
       canvas.getContext('2d').drawImage(video, 0, 0, 160, 90);
       const thumb = document.getElementById('previewThumb');
-      if (thumb) { thumb.style.backgroundImage = `url(${canvas.toDataURL()})`; thumb.classList.add('has-thumb'); }
+      if (thumb) {
+        thumb.style.backgroundImage = `url(${canvas.toDataURL()})`;
+        thumb.classList.add('has-thumb');
+      }
       URL.revokeObjectURL(url);
     });
   }
@@ -268,10 +317,10 @@ function showFilePreview(file) {
 }
 
 async function handleFile(file) {
-  // Reset state
   dashInit   = false;
   dashLocked = true;
 
+  // Hide the CTA and reset waitlist form
   const cta = document.getElementById('dashCta');
   if (cta) { cta.style.display = 'none'; cta.setAttribute('aria-hidden', 'true'); }
 
@@ -284,6 +333,7 @@ async function handleFile(file) {
   if (wlError)   { wlError.style.display   = 'none'; wlError.setAttribute('hidden', ''); }
   if (wlSubmit)  { wlSubmit.disabled = false; wlSubmit.textContent = 'Get early access'; }
 
+  // Hide drop zone, show preview and progress
   const zone = document.getElementById('dropZone');
   if (zone) zone.style.display = 'none';
   showFilePreview(file);
@@ -294,7 +344,7 @@ async function handleFile(file) {
   PIPELINE.forEach(s => setStepState(s.id, 'pending'));
   setProgress(0, 'Starting pipeline…');
 
-  announce(`Upload started for jersey #${SESSION.jersey}. Processing pipeline initiated.`);
+  announce(`Upload started for jersey #${SESSION.jersey}. Pipeline initiated.`);
   await runPipeline(file);
 }
 
@@ -304,7 +354,7 @@ const PIPELINE = [
   { id: 'step2', label: 'Uploading via S3 Transfer Accel', pct: 72,  ms: 4000 },
   { id: 'step3', label: 'Assigning session UUID',          pct: 78,  ms: 500  },
   { id: 'step4', label: 'Triggering Lambda',               pct: 82,  ms: 600  },
-  { id: 'step5', label: `AI Vision scanning player…`,      pct: 97,  ms: 3500 },
+  { id: 'step5', label: 'AI Vision model processing',      pct: 97,  ms: 3500 },
   { id: 'step6', label: 'SNS notification sent',           pct: 100, ms: 500  },
 ];
 
@@ -342,7 +392,11 @@ async function simulateUpload(totalBytes) {
     const rem      = (totalBytes - done) / speedBps;
     setProgress(pct, `Uploading… ${fmt(done)} of ${fmt(totalBytes)}`);
     if (speedEl) speedEl.textContent = fmt(speedBps) + '/s';
-    if (etaEl && rem > 0) etaEl.textContent = rem < 60 ? Math.ceil(rem) + 's remaining' : Math.ceil(rem / 60) + 'm remaining';
+    if (etaEl && rem > 0) {
+      etaEl.textContent = rem < 60
+        ? Math.ceil(rem) + 's remaining'
+        : Math.ceil(rem / 60) + 'm remaining';
+    }
   }
   if (speedEl) speedEl.textContent = '';
   if (etaEl)   etaEl.textContent   = '✓ uploaded';
@@ -356,12 +410,12 @@ async function simulateAiAnalysis() {
 
   const jersey = SESSION.jersey || '7';
   const stages = [
-    { label: `Extracting key frames…`,                    pct: 82 },
-    { label: `Locating player #${jersey} on pitch…`,      pct: 86 },
-    { label: `Mapping scanning behaviour for #${jersey}…`,pct: 90 },
-    { label: `Analysing first touch quality…`,            pct: 93 },
-    { label: `Computing decision speed…`,                 pct: 96 },
-    { label: `Generating scout report for #${jersey}…`,   pct: 97 },
+    { label: 'Extracting key frames…',                       pct: 82 },
+    { label: `Locating player #${jersey} on pitch…`,         pct: 86 },
+    { label: `Mapping scanning behaviour for #${jersey}…`,   pct: 90 },
+    { label: 'Analysing first touch quality…',               pct: 93 },
+    { label: 'Computing decision speed…',                    pct: 96 },
+    { label: `Generating scout report for #${jersey}…`,      pct: 97 },
   ];
 
   for (const stage of stages) {
@@ -385,7 +439,6 @@ async function runPipeline(file) {
     if (i > 0) setStepState(PIPELINE[i - 1].id, 'done');
     setStepState(step.id, 'active');
 
-    // Personalise the AI step label with jersey number
     const label = step.id === 'step5'
       ? `AI Vision scanning player #${SESSION.jersey}…`
       : step.label + '…';
@@ -393,11 +446,14 @@ async function runPipeline(file) {
     announce(step.label);
 
     if (step.id === 'step2') {
-      document.getElementById('sessionUuid').textContent = SESSION.sessionUuid;
-      document.getElementById('playerUuid').textContent  = SESSION.playerUuid;
-      document.getElementById('s3Key').textContent       = `footage/${SESSION.sessionUuid}.mp4`;
-      const jerseyEl = document.getElementById('sessionJersey');
-      if (jerseyEl) jerseyEl.textContent = `#${SESSION.jersey}`;
+      const suEl = document.getElementById('sessionUuid');
+      const puEl = document.getElementById('playerUuid');
+      const skEl = document.getElementById('s3Key');
+      const jrEl = document.getElementById('sessionJersey');
+      if (suEl) suEl.textContent = SESSION.sessionUuid;
+      if (puEl) puEl.textContent = SESSION.playerUuid;
+      if (skEl) skEl.textContent = `footage/${SESSION.sessionUuid}.mp4`;
+      if (jrEl) jrEl.textContent = `#${SESSION.jersey}`;
       if (sessionEl) { sessionEl.classList.add('show'); sessionEl.removeAttribute('aria-hidden'); }
       await simulateUpload(file.size || 85 * 1024 * 1024);
     } else if (step.id === 'step5') {
@@ -412,7 +468,7 @@ async function runPipeline(file) {
 
   const statusEl = document.getElementById('statusVal');
   if (statusEl) { statusEl.textContent = '✓ complete'; statusEl.style.color = 'var(--accent)'; }
-  announce(`Analysis complete for #${SESSION.jersey}. Scout report is ready.`);
+  announce(`Analysis complete for #${SESSION.jersey}. Your scout report is ready.`);
 
   const cta = document.getElementById('dashCta');
   if (cta) { cta.style.display = 'flex'; cta.removeAttribute('aria-hidden'); }
@@ -420,22 +476,21 @@ async function runPipeline(file) {
   dashLocked = false;
 }
 
-// ── Dashboard — personalised ───────────────────────────────
+// ── Dashboard — personalised from SESSION ─────────────────
 let dashInit   = false;
 let dashLocked = true;
 
-// Position-specific insight overrides
 const POSITION_INSIGHTS = {
-  GK:  { pos: 'Distribution accuracy: 78% long passes on target', touch: 'Clean catches: 11/12 attempts' },
-  CB:  { pos: 'Defensive line held: 14/17 duels won', touch: 'Clean clearances: 19/22 attempts' },
-  LB:  { pos: 'Overlap runs completed: 8/10 attempts', touch: 'Clean control: 29/33 attempts' },
-  RB:  { pos: 'Overlap runs completed: 9/11 attempts', touch: 'Clean control: 31/35 attempts' },
-  CDM: { pos: 'Interceptions per 90: 4.8 (top 15%)', touch: 'Clean control: 36/40 attempts' },
-  CM:  { pos: 'Optimal zone occupancy: 68% of possession', touch: 'Clean control: 34/37 attempts' },
-  CAM: { pos: 'Key passes into final third: 6 (match high)', touch: 'Clean control: 33/36 attempts' },
-  LW:  { pos: '1v1 duels won: 7/10 attempts', touch: 'Clean control: 28/31 attempts' },
-  RW:  { pos: '1v1 duels won: 8/11 attempts', touch: 'Clean control: 30/34 attempts' },
-  ST:  { pos: 'Runs in behind: 9 created (5 on target)', touch: 'Clean control: 22/25 attempts' },
+  GK:  { pos: 'Distribution accuracy: 78% long passes on target',     touch: 'Clean catches: 11/12 attempts' },
+  CB:  { pos: 'Defensive line held: 14/17 duels won',                 touch: 'Clean clearances: 19/22 attempts' },
+  LB:  { pos: 'Overlap runs completed: 8/10 attempts',                touch: 'Clean control: 29/33 attempts' },
+  RB:  { pos: 'Overlap runs completed: 9/11 attempts',                touch: 'Clean control: 31/35 attempts' },
+  CDM: { pos: 'Interceptions per 90: 4.8 (top 15%)',                  touch: 'Clean control: 36/40 attempts' },
+  CM:  { pos: 'Optimal zone occupancy: 68% of possession',            touch: 'Clean control: 34/37 attempts' },
+  CAM: { pos: 'Key passes into final third: 6 (match high)',           touch: 'Clean control: 33/36 attempts' },
+  LW:  { pos: '1v1 duels won: 7/10 attempts',                         touch: 'Clean control: 28/31 attempts' },
+  RW:  { pos: '1v1 duels won: 8/11 attempts',                         touch: 'Clean control: 30/34 attempts' },
+  ST:  { pos: 'Runs in behind: 9 created (5 on target)',               touch: 'Clean control: 22/25 attempts' },
 };
 
 const FOOT_INSIGHTS = {
@@ -451,49 +506,35 @@ function populateDashboard() {
   const age      = SESSION.age      || 'U16';
   const foot     = SESSION.foot     || 'Right';
   const match    = SESSION.match    || 'League';
+  const pUuid    = SESSION.playerUuid || 'a7f3e2b1-9c84-4d12-8e56-2f0a1b3c4d5e';
 
-  // Player context card
-  const pcJersey = document.getElementById('pcJersey');
-  if (pcJersey) pcJersey.textContent = '#' + jersey;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const vis = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = val ? '' : 'none';
+    el.textContent = val;
+  };
 
-  const pcPosition = document.getElementById('pcPosition');
-  if (pcPosition) pcPosition.textContent = position || 'Position TBD';
+  set('pcJersey', '#' + jersey);
+  vis('pcPosition', position || 'Position TBD');
+  vis('pcAge',      age);
+  vis('pcFoot',     foot ? foot + ' foot' : '');
+  vis('pcMatch',    match);
+  set('pcUuid', `player_uuid: ${pUuid}`);
 
-  const pcAge = document.getElementById('pcAge');
-  if (pcAge) pcAge.style.display = age ? '' : 'none';
-  if (pcAge && age) pcAge.textContent = age;
-
-  const pcFoot = document.getElementById('pcFoot');
-  if (pcFoot) pcFoot.style.display = foot ? '' : 'none';
-  if (pcFoot && foot) pcFoot.textContent = foot + ' foot';
-
-  const pcMatch = document.getElementById('pcMatch');
-  if (pcMatch) pcMatch.style.display = match ? '' : 'none';
-  if (pcMatch && match) pcMatch.textContent = match;
-
-  const pcUuid = document.getElementById('pcUuid');
-  if (pcUuid) pcUuid.textContent = `player_uuid: ${SESSION.playerUuid || 'a7f3e2b1-9c84-4d12-8e56-2f0a1b3c4d5e'}`;
-
-  // Report meta
   const meta = document.getElementById('dashReportMeta');
-  if (meta) meta.textContent = `AI Scout Report — #${jersey} · ${match || 'Match'} analysis`;
+  if (meta) meta.textContent = `PitchScout Report — #${jersey} · ${match || 'Match'} analysis`;
 
-  // Grade hero
   const gradeHero = document.getElementById('gradeHero');
   if (gradeHero) gradeHero.setAttribute('aria-label', `Overall scout grade for #${jersey}: B+`);
 
-  // Position-specific captions
   const ins = POSITION_INSIGHTS[position] || POSITION_INSIGHTS['CM'];
-  const posCaption = document.getElementById('posCaption');
-  if (posCaption) posCaption.textContent = ins.pos;
-  const touchCaption = document.getElementById('touchCaption');
-  if (touchCaption) touchCaption.textContent = ins.touch;
+  set('posCaption',   ins.pos);
+  set('touchCaption', ins.touch);
 
-  // Foot-specific observation
-  const feed3 = document.getElementById('feed3');
-  if (feed3) feed3.textContent = FOOT_INSIGHTS[foot] || FOOT_INSIGHTS[''];
+  set('feed3', FOOT_INSIGHTS[foot] || FOOT_INSIGHTS['']);
 
-  // Feed item 4 — age-bracket context
   const feed4 = document.getElementById('feed4');
   if (feed4 && age) {
     feed4.textContent = `High-pressure scenario response: 7/9 correct decisions — notable composure for ${age} age bracket`;
@@ -502,7 +543,7 @@ function populateDashboard() {
 
 function initDashboard() {
   if (dashLocked) {
-    announce('Please complete an upload first to view the analysis dashboard.');
+    announce('Please complete an analysis first to view the dashboard.');
     return;
   }
   if (dashInit) return;
@@ -551,6 +592,7 @@ function bindWaitlistForm() {
   const error   = document.getElementById('wlError');
   if (!form) return;
 
+  // Ensure both state messages are hidden on init
   if (success) { success.style.display = 'none'; success.setAttribute('hidden', ''); }
   if (error)   { error.style.display   = 'none'; error.setAttribute('hidden', ''); }
 
@@ -561,16 +603,15 @@ function bindWaitlistForm() {
 
     if (form.action.includes('YOUR_FORM_ID')) {
       if (error) {
-        error.textContent   = 'Form not configured — replace YOUR_FORM_ID in index.html with your Formspree ID.';
+        error.textContent   = 'Form not configured — replace YOUR_FORM_ID with your Formspree ID.';
         error.style.display = 'flex';
         error.removeAttribute('hidden');
       }
       return;
     }
 
-    submit.disabled    = true;
-    submit.textContent = 'Sending…';
-    if (error) { error.style.display = 'none'; error.setAttribute('hidden', ''); }
+    if (submit) { submit.disabled = true; submit.textContent = 'Sending…'; }
+    if (error)  { error.style.display = 'none'; error.setAttribute('hidden', ''); }
 
     try {
       const res = await fetch(form.action, {
@@ -587,8 +628,7 @@ function bindWaitlistForm() {
         throw new Error(data.error || 'Server error ' + res.status);
       }
     } catch (err) {
-      submit.disabled    = false;
-      submit.textContent = 'Get early access';
+      if (submit) { submit.disabled = false; submit.textContent = 'Get early access'; }
       if (error) {
         error.textContent   = 'Submission failed: ' + (err.message || 'please try again.');
         error.style.display = 'flex';
@@ -599,16 +639,21 @@ function bindWaitlistForm() {
   });
 }
 
-// ── Boot ──────────────────────────────────────────────────
+// ── Boot — single DOMContentLoaded ────────────────────────
+// NOTE: openIntake() is NOT called here. The modal stays hidden
+// until the user explicitly clicks Select File or Try Demo.
 document.addEventListener('DOMContentLoaded', () => {
+  // Nav tabs
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.addEventListener('click',   () => switchView(btn.dataset.view));
     btn.addEventListener('keydown', handleTabKeydown);
   });
 
+  // View report button
   const goToDash = document.getElementById('goToDashBtn');
   if (goToDash) goToDash.addEventListener('click', () => switchView('dashboard'));
 
+  // Wire everything — modal starts hidden (display:none in HTML)
   bindIntakeModal();
   bindDropZone();
   bindWaitlistForm();
